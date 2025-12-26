@@ -34,7 +34,7 @@ const KEYPAD = [
 ];
 
 // ============================================
-// CALCULATION ENGINE - CORRIGIDO
+// CALCULATION ENGINE
 // ============================================
 function parseInchValue(str: string): number {
   let s = str.trim().replace(/"/g, '');
@@ -109,37 +109,34 @@ function evaluateExpression(expr: string): number | null {
     const result = Function(`"use strict"; return (${e})`)();
     return typeof result === 'number' && isFinite(result) ? result : null;
   } catch {
+    console.warn('[Math] Evaluation failed for:', expr);
     return null;
   }
 }
 
-// CORREÇÃO PRINCIPAL: Detectar frações ANTES de procurar operador
 function calculate(expression: string): CalculationResult | null {
   const expr = expression.trim();
   if (!expr) return null;
   
+  console.log('[Math] Calculating:', expr);
+
   // Check if it's an inch calculation (has fractions or feet)
   const hasInches = /['"]|\d+\/\d+/.test(expr);
   
   if (hasInches) {
-    // CORREÇÃO: Usar regex que NÃO confunde fração com divisão
-    // Procura por operador (+, -, *, /) que está ENTRE espaços e NÃO faz parte de uma fração
-    
     let tempExpr = expr;
     const fractions: string[] = [];
     
-    // Captura todas as frações (incluindo mixed numbers como "5 1/2")
+    // Captura todas as frações
     tempExpr = tempExpr.replace(/(\d+\s+)?(\d+\/\d+)/g, (match) => {
       fractions.push(match);
       return `__FRAC${fractions.length - 1}__`;
     });
     
-    // Agora procura o operador real (entre espaços)
     const opMatch = tempExpr.match(/(.+?)\s*([\+\-\*])\s*(.+)/) || 
-                    tempExpr.match(/(.+?)\s+(\/)\s+(.+)/); // divisão precisa de espaços dos dois lados
+                    tempExpr.match(/(.+?)\s+(\/)\s+(.+)/);
     
     if (opMatch) {
-      // Restaura as frações
       let aStr = opMatch[1];
       let op = opMatch[2];
       let bStr = opMatch[3];
@@ -170,7 +167,6 @@ function calculate(expression: string): CalculationResult | null {
       };
     }
     
-    // Se não achou operador, pode ser só um valor
     const singleValue = parseInchValue(expr);
     if (!isNaN(singleValue)) {
       return {
@@ -183,7 +179,7 @@ function calculate(expression: string): CalculationResult | null {
     }
   }
   
-  // Normal calculation (sem frações)
+  // Normal calculation
   const result = evaluateExpression(expr);
   if (result !== null) {
     return {
@@ -193,6 +189,7 @@ function calculate(expression: string): CalculationResult | null {
     };
   }
   
+  console.error('[Math] Calculation Error');
   return { result: 'Error', expression: expr };
 }
 
@@ -205,23 +202,39 @@ function useSpeechRecognition(onResult: (text: string) => void) {
 
   const start = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition) {
+      console.error('[Voice] Speech API not supported');
+      return;
+    }
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    
+    // ALTERADO: pt-BR para suportar melhor sotaques brasileiros e "Portinglês"
+    recognition.lang = 'pt-BR'; 
 
+    recognition.onstart = () => console.log('[Voice] Started listening (pt-BR)...');
+    
     recognition.onresult = (event: any) => {
       let transcript = '';
       for (let i = 0; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
+      // LOG TÉCNICO: O que o navegador está ouvindo
+      console.log('[Voice] Interim:', transcript); 
       onResult(transcript);
     };
 
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
+    recognition.onerror = (event: any) => {
+      console.error('[Voice] Error:', event.error);
+      setIsListening(false);
+    };
+    
+    recognition.onend = () => {
+      console.log('[Voice] Stopped');
+      setIsListening(false);
+    };
 
     recognitionRef.current = recognition;
     recognition.start();
@@ -243,6 +256,7 @@ function useSpeechRecognition(onResult: (text: string) => void) {
 // API SERVICE
 // ============================================
 async function interpretWithAI(text: string): Promise<any> {
+  console.log('[API] Sending request for:', text);
   try {
     const response = await fetch(API_ENDPOINT, {
       method: 'POST',
@@ -250,9 +264,13 @@ async function interpretWithAI(text: string): Promise<any> {
       body: JSON.stringify({ text, lang: 'auto' })
     });
     
-    if (!response.ok) throw new Error('API error');
-    return await response.json();
+    if (!response.ok) throw new Error(`Status ${response.status}`);
+    
+    const data = await response.json();
+    console.log('[API] Response received:', data);
+    return data;
   } catch (error) {
+    console.error('[API] Request failed:', error);
     return { error: true };
   }
 }
@@ -264,8 +282,14 @@ function useOnlineStatus() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      console.log('[Net] Online');
+      setIsOnline(true);
+    };
+    const handleOffline = () => {
+      console.warn('[Net] Offline');
+      setIsOnline(false);
+    };
     
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -293,11 +317,9 @@ export default function App() {
   
   const transcriptRef = useRef('');
   
-  // CORREÇÃO: Não atualizar display durante gravação (evita layout shift)
   const { isListening, start: startListening, stop: stopListening } = useSpeechRecognition(
     (text) => {
       transcriptRef.current = text;
-      // Só atualiza o input, não o display principal
       setExpression(text);
     }
   );
@@ -312,7 +334,7 @@ export default function App() {
     }
   }, [expression]);
 
-  // Handle AI interpretation - CORRIGIDO para auto-calcular
+  // Handle AI interpretation
   const handleAIInterpret = useCallback(async (text: string) => {
     if (!text.trim()) {
       setDisplayValue('0');
@@ -321,13 +343,13 @@ export default function App() {
     }
 
     setVoiceState('processing');
-    setDisplayValue('Thinking...'); // CORREÇÃO: mudou de "synchronizing"
+    setDisplayValue('Thinking...'); // UI Limpa para o usuário
 
     try {
       const aiResult = await interpretWithAI(text);
       
       if (aiResult.error) {
-        // Try local calculation
+        console.warn('[App] AI failed, attempting fallback...');
         const localResult = calculate(text);
         if (localResult && !localResult.result.includes('Error')) {
           setDisplayValue(localResult.result);
@@ -336,9 +358,9 @@ export default function App() {
           setDisplayValue('Try again');
         }
       } else if (aiResult.mode === 'inches' && aiResult.a && aiResult.b && aiResult.op) {
-        // AUTO-CALCULAR com resultado da IA
         const expr = `${aiResult.a} ${aiResult.op} ${aiResult.b}`;
         setExpression(expr);
+        console.log('[App] Executing AI instruction:', expr);
         const result = calculate(expr);
         if (result) {
           setDisplayValue(result.result);
@@ -358,7 +380,8 @@ export default function App() {
           setLastResult(localResult);
         }
       }
-    } catch {
+    } catch (e) {
+      console.error('[App] Critical error:', e);
       setDisplayValue('Error');
     }
     
@@ -376,16 +399,15 @@ export default function App() {
     startListening();
   }, [startListening]);
 
-  // CORREÇÃO: Auto-calcular ao soltar o botão
   const handleVoiceEnd = useCallback(async () => {
     stopListening();
     setVoiceState('processing');
     setDisplayValue('Thinking...');
     
-    // Pequeno delay para garantir que o transcript final chegou
     await new Promise(resolve => setTimeout(resolve, 300));
     
     const finalText = transcriptRef.current || expression;
+    console.log('[App] Voice session ended. Final text:', finalText);
     await handleAIInterpret(finalText);
   }, [stopListening, expression, handleAIInterpret]);
 
@@ -434,12 +456,10 @@ export default function App() {
     }
   };
 
-  // Handle fraction click
   const handleFractionClick = (frac: string) => {
     if (frac === "'ft") {
       handleKeypadInput("' ");
     } else {
-      // Adiciona fração sem espaço extra se já tem número
       const fracValue = frac.replace('"', '');
       if (expression && /\d$/.test(expression)) {
         handleKeypadInput(' ' + fracValue);
@@ -449,7 +469,6 @@ export default function App() {
     }
   };
 
-  // Texto do botão de voz
   const getVoiceButtonText = () => {
     if (!isOnline) return 'Offline';
     if (voiceState === 'listening') return 'Listening...';
@@ -509,7 +528,7 @@ export default function App() {
             <span className="voice-text">{getVoiceButtonText()}</span>
           </button>
 
-          {/* Memory display - só mostra se tiver resultado de inches */}
+          {/* Memory display */}
           {lastResult && lastResult.mode === 'inches' && lastResult.a && lastResult.b && lastResult.op && (
             <div className="memory">
               <div>{lastResult.a}</div>
@@ -521,7 +540,6 @@ export default function App() {
 
         {/* Right side - Keypad */}
         <div className="card right-card">
-          {/* Fraction Pad */}
           <div className="fraction-label">MEASURES</div>
           <div className="fraction-pad">
             {FRACTION_PAD.flat().map((frac, i) => (
@@ -535,7 +553,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* Number Keypad */}
           <div className="keypad">
             {KEYPAD.map((row, rowIndex) => (
               <div key={rowIndex} className={`keypad-row ${rowIndex === KEYPAD.length - 1 ? 'last-row' : ''}`}>
