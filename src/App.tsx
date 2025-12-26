@@ -34,7 +34,7 @@ const KEYPAD = [
 ];
 
 // ============================================
-// CALCULATION ENGINE
+// CALCULATION ENGINE - CORRIGIDO
 // ============================================
 function parseInchValue(str: string): number {
   let s = str.trim().replace(/"/g, '');
@@ -49,7 +49,7 @@ function parseInchValue(str: string): number {
   s = s.trim();
   if (!s) return feet * 12;
   
-  // Handle fractions like "3 1/4" or "1/2"
+  // Handle mixed numbers: "3 1/4" or "10 3/8"
   const mixedMatch = s.match(/^(\d+)\s+(\d+)\/(\d+)$/);
   if (mixedMatch) {
     const whole = parseFloat(mixedMatch[1]);
@@ -58,11 +58,13 @@ function parseInchValue(str: string): number {
     return feet * 12 + whole + num / den;
   }
   
+  // Handle simple fractions: "1/2" or "3/8"
   const fracMatch = s.match(/^(\d+)\/(\d+)$/);
   if (fracMatch) {
     return feet * 12 + parseFloat(fracMatch[1]) / parseFloat(fracMatch[2]);
   }
   
+  // Handle whole numbers
   return feet * 12 + (parseFloat(s) || 0);
 }
 
@@ -99,13 +101,11 @@ function formatInchResult(inches: number): string {
 
 function evaluateExpression(expr: string): number | null {
   try {
-    // Replace operators
     let e = expr
       .replace(/×/g, '*')
       .replace(/÷/g, '/')
       .replace(/[^\d\s\.\+\-\*\/\(\)]/g, '');
     
-    // Safe evaluation
     const result = Function(`"use strict"; return (${e})`)();
     return typeof result === 'number' && isFinite(result) ? result : null;
   } catch {
@@ -113,20 +113,44 @@ function evaluateExpression(expr: string): number | null {
   }
 }
 
+// CORREÇÃO PRINCIPAL: Detectar frações ANTES de procurar operador
 function calculate(expression: string): CalculationResult | null {
   const expr = expression.trim();
   if (!expr) return null;
   
   // Check if it's an inch calculation (has fractions or feet)
-  const hasInches = /['"]|\/\d+/.test(expr);
+  const hasInches = /['"]|\d+\/\d+/.test(expr);
   
   if (hasInches) {
-    // Parse as inch calculation: "3 1/4 + 5 3/8"
-    const opMatch = expr.match(/(.+?)\s*([\+\-\*\/])\s*(.+)/);
+    // CORREÇÃO: Usar regex que NÃO confunde fração com divisão
+    // Procura por operador (+, -, *, /) que está ENTRE espaços e NÃO faz parte de uma fração
+    
+    let tempExpr = expr;
+    const fractions: string[] = [];
+    
+    // Captura todas as frações (incluindo mixed numbers como "5 1/2")
+    tempExpr = tempExpr.replace(/(\d+\s+)?(\d+\/\d+)/g, (match) => {
+      fractions.push(match);
+      return `__FRAC${fractions.length - 1}__`;
+    });
+    
+    // Agora procura o operador real (entre espaços)
+    const opMatch = tempExpr.match(/(.+?)\s*([\+\-\*])\s*(.+)/) || 
+                    tempExpr.match(/(.+?)\s+(\/)\s+(.+)/); // divisão precisa de espaços dos dois lados
+    
     if (opMatch) {
-      const a = parseInchValue(opMatch[1]);
-      const op = opMatch[2];
-      const b = parseInchValue(opMatch[3]);
+      // Restaura as frações
+      let aStr = opMatch[1];
+      let op = opMatch[2];
+      let bStr = opMatch[3];
+      
+      fractions.forEach((frac, i) => {
+        aStr = aStr.replace(`__FRAC${i}__`, frac);
+        bStr = bStr.replace(`__FRAC${i}__`, frac);
+      });
+      
+      const a = parseInchValue(aStr);
+      const b = parseInchValue(bStr);
       
       let result: number;
       switch (op) {
@@ -140,14 +164,26 @@ function calculate(expression: string): CalculationResult | null {
       return {
         result: formatInchResult(result),
         mode: 'inches',
-        a: opMatch[1].trim(),
-        b: opMatch[3].trim(),
+        a: aStr.trim(),
+        b: bStr.trim(),
         op
+      };
+    }
+    
+    // Se não achou operador, pode ser só um valor
+    const singleValue = parseInchValue(expr);
+    if (!isNaN(singleValue)) {
+      return {
+        result: formatInchResult(singleValue),
+        mode: 'inches',
+        a: expr,
+        b: '',
+        op: ''
       };
     }
   }
   
-  // Normal calculation
+  // Normal calculation (sem frações)
   const result = evaluateExpression(expr);
   if (result !== null) {
     return {
@@ -257,11 +293,12 @@ export default function App() {
   
   const transcriptRef = useRef('');
   
+  // CORREÇÃO: Não atualizar display durante gravação (evita layout shift)
   const { isListening, start: startListening, stop: stopListening } = useSpeechRecognition(
     (text) => {
       transcriptRef.current = text;
+      // Só atualiza o input, não o display principal
       setExpression(text);
-      setDisplayValue(text || '🎙️');
     }
   );
 
@@ -275,7 +312,7 @@ export default function App() {
     }
   }, [expression]);
 
-  // Handle AI interpretation
+  // Handle AI interpretation - CORRIGIDO para auto-calcular
   const handleAIInterpret = useCallback(async (text: string) => {
     if (!text.trim()) {
       setDisplayValue('0');
@@ -284,7 +321,7 @@ export default function App() {
     }
 
     setVoiceState('processing');
-    setDisplayValue('...');
+    setDisplayValue('Thinking...'); // CORREÇÃO: mudou de "synchronizing"
 
     try {
       const aiResult = await interpretWithAI(text);
@@ -299,6 +336,7 @@ export default function App() {
           setDisplayValue('Try again');
         }
       } else if (aiResult.mode === 'inches' && aiResult.a && aiResult.b && aiResult.op) {
+        // AUTO-CALCULAR com resultado da IA
         const expr = `${aiResult.a} ${aiResult.op} ${aiResult.b}`;
         setExpression(expr);
         const result = calculate(expr);
@@ -338,8 +376,15 @@ export default function App() {
     startListening();
   }, [startListening]);
 
+  // CORREÇÃO: Auto-calcular ao soltar o botão
   const handleVoiceEnd = useCallback(async () => {
     stopListening();
+    setVoiceState('processing');
+    setDisplayValue('Thinking...');
+    
+    // Pequeno delay para garantir que o transcript final chegou
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
     const finalText = transcriptRef.current || expression;
     await handleAIInterpret(finalText);
   }, [stopListening, expression, handleAIInterpret]);
@@ -394,8 +439,22 @@ export default function App() {
     if (frac === "'ft") {
       handleKeypadInput("' ");
     } else {
-      handleKeypadInput(' ' + frac.replace('"', ''));
+      // Adiciona fração sem espaço extra se já tem número
+      const fracValue = frac.replace('"', '');
+      if (expression && /\d$/.test(expression)) {
+        handleKeypadInput(' ' + fracValue);
+      } else {
+        handleKeypadInput(fracValue);
+      }
     }
+  };
+
+  // Texto do botão de voz
+  const getVoiceButtonText = () => {
+    if (!isOnline) return 'Offline';
+    if (voiceState === 'listening') return 'Listening...';
+    if (voiceState === 'processing') return 'Thinking...';
+    return 'Hold to Speak';
   };
 
   return (
@@ -416,10 +475,12 @@ export default function App() {
       </header>
 
       <main className="main">
-        {/* Left Card - Display & Voice */}
-        <div className="card">
-          <div className="display-label">RESULT</div>
-          <div className={`display ${voiceState}`}>{displayValue}</div>
+        {/* Left side - Display & Voice */}
+        <div className="card left-card">
+          <div className="display-section">
+            <div className="display-label">RESULT</div>
+            <div className={`display ${voiceState}`}>{displayValue}</div>
+          </div>
           
           <div className="divider" />
           
@@ -445,13 +506,11 @@ export default function App() {
             onTouchEnd={handleVoiceEnd}
           >
             <span className="voice-icon">{voiceState === 'listening' ? '🔴' : '🎙️'}</span>
-            <span className="voice-text">
-              {!isOnline ? 'Offline' : voiceState === 'listening' ? 'Listening...' : voiceState === 'processing' ? 'Processing...' : 'Hold to Speak'}
-            </span>
+            <span className="voice-text">{getVoiceButtonText()}</span>
           </button>
 
-          {/* Memory display */}
-          {lastResult && lastResult.mode === 'inches' && lastResult.a && lastResult.b && (
+          {/* Memory display - só mostra se tiver resultado de inches */}
+          {lastResult && lastResult.mode === 'inches' && lastResult.a && lastResult.b && lastResult.op && (
             <div className="memory">
               <div>{lastResult.a}</div>
               <div>{lastResult.op} {lastResult.b}</div>
@@ -460,8 +519,8 @@ export default function App() {
           )}
         </div>
 
-        {/* Right Card - Keypad */}
-        <div className="card">
+        {/* Right side - Keypad */}
+        <div className="card right-card">
           {/* Fraction Pad */}
           <div className="fraction-label">MEASURES</div>
           <div className="fraction-pad">

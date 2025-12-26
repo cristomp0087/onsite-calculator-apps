@@ -1,18 +1,27 @@
+/* ============================================
+   OnSite Calculator - CSS
+   CORREÇÕES: Layout mobile compacto, display fixo
+   ============================================ */
+
+* {
+  box-sizing: border-box;
+}
+
 .app {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height para mobile */
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* CORREÇÃO: Trava scroll */
 }
 
 /* Header */
 .header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  flex-shrink: 0;
   background: rgba(2, 6, 23, 0.95);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(75, 85, 99, 0.35);
-  padding: 12px 16px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -21,18 +30,18 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .logo {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   background: linear-gradient(135deg, #f59e0b, #d97706);
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: bold;
   color: #0b1120;
 }
@@ -43,82 +52,91 @@
 }
 
 .brand-title {
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 700;
   color: #f9fafb;
+  line-height: 1.1;
 }
 
 .brand-subtitle {
-  font-size: 0.65rem;
+  font-size: 0.55rem;
   color: #9ca3af;
   letter-spacing: 0.1em;
 }
 
 .offline-badge {
-  padding: 6px 12px;
+  padding: 4px 8px;
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.4);
   border-radius: 9999px;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   color: #fca5a5;
 }
 
 .website-btn {
-  padding: 8px 14px;
+  padding: 6px 10px;
   background: rgba(31, 41, 55, 0.8);
   border: 1px solid rgba(75, 85, 99, 0.5);
-  border-radius: 10px;
+  border-radius: 8px;
   color: #e5e7eb;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   text-decoration: none;
-  transition: all 0.2s;
 }
 
-.website-btn:hover {
-  border-color: rgba(245, 158, 11, 0.5);
-  color: #f9fafb;
-}
-
-/* Main Layout */
+/* Main Layout - CORREÇÃO: Flex para ocupar espaço disponível */
 .main {
   flex: 1;
-  max-width: 900px;
-  margin: 18px auto;
-  padding: 0 16px 30px;
-  display: grid;
-  gap: 14px;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+  overflow: hidden; /* CORREÇÃO: Sem scroll */
+  max-height: calc(100vh - 50px);
+  max-height: calc(100dvh - 50px);
 }
 
-@media (min-width: 768px) {
-  .main {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-/* Card */
+/* Cards */
 .card {
   background: rgba(17, 24, 39, 0.85);
   border: 1px solid rgba(75, 85, 99, 0.35);
-  border-radius: 16px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 12px;
 }
 
-/* Display */
+.left-card {
+  flex-shrink: 0;
+}
+
+.right-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Permite shrink */
+}
+
+/* Display - CORREÇÃO: Altura fixa */
+.display-section {
+  min-height: 60px;
+  max-height: 60px;
+  overflow: hidden;
+}
+
 .display-label {
   color: #9ca3af;
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   letter-spacing: 0.15em;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .display {
-  font-size: 2.8rem;
+  font-size: 2rem;
   font-weight: 600;
   color: #f59e0b;
-  min-height: 56px;
-  word-break: break-all;
-  transition: color 0.2s;
+  height: 40px;
+  line-height: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .display.listening {
@@ -139,78 +157,63 @@
 .divider {
   height: 1px;
   background: rgba(75, 85, 99, 0.5);
-  margin: 16px 0;
+  margin: 8px 0;
 }
 
-/* Expression Input */
+/* Expression Input - CORREÇÃO: Compacto */
 .expression-input {
   width: 100%;
   background: rgba(2, 6, 23, 0.7);
   border: 1px solid rgba(75, 85, 99, 0.65);
   color: #f9fafb;
-  border-radius: 12px;
-  padding: 14px 16px;
-  font-size: 1.1rem;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
   font-family: inherit;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .expression-input:focus {
   outline: none;
   border-color: rgba(245, 158, 11, 0.85);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
 }
 
 .expression-input::placeholder {
   color: #6b7280;
 }
 
-/* Voice Button */
+/* Voice Button - CORREÇÃO: Compacto */
 .voice-btn {
   width: 100%;
-  max-width: 280px;
-  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 14px 24px;
+  gap: 8px;
+  padding: 10px 16px;
   background: rgba(245, 158, 11, 0.12);
   border: 2px solid rgba(245, 158, 11, 0.45);
   border-radius: 9999px;
   color: #f9fafb;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
   user-select: none;
-}
-
-.voice-btn:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.7);
+  -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
 .voice-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  border-color: rgba(75, 85, 99, 0.5);
 }
 
 .voice-btn.listening {
   background: rgba(59, 130, 246, 0.2);
   border-color: rgba(59, 130, 246, 0.7);
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
-  animation: pulseRing 1.5s infinite;
-}
-
-@keyframes pulseRing {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
-  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.1); }
 }
 
 .voice-icon {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .voice-text {
@@ -221,53 +224,47 @@
   color: #93c5fd;
 }
 
-/* Memory */
+/* Memory - CORREÇÃO: Compacto */
 .memory {
-  margin-top: 16px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid rgba(75, 85, 99, 0.5);
   font-family: monospace;
   color: #d1d5db;
-  font-size: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.3;
 }
 
 .memory-line {
   color: #6b7280;
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
-/* Fraction Pad */
+/* Fraction Pad - CORREÇÃO: Compacto */
 .fraction-label {
   color: #9ca3af;
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   letter-spacing: 0.15em;
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .fraction-pad {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .frac-btn {
   background: rgba(31, 41, 55, 0.6);
   border: 1px solid rgba(75, 85, 99, 0.4);
   color: #d1d5db;
-  border-radius: 10px;
-  padding: 12px 4px;
-  font-size: 0.95rem;
+  border-radius: 8px;
+  padding: 8px 2px;
+  font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
-}
-
-.frac-btn:hover {
-  background: rgba(31, 41, 55, 0.9);
-  border-color: rgba(75, 85, 99, 0.7);
-  color: #f9fafb;
 }
 
 .frac-btn:active {
@@ -280,21 +277,19 @@
   color: #fbbf24;
 }
 
-.frac-btn.feet:hover {
-  background: rgba(245, 158, 11, 0.25);
-}
-
-/* Keypad */
+/* Keypad - CORREÇÃO: Flex para ocupar espaço */
 .keypad {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .keypad-row {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 6px;
 }
 
 .keypad-row.last-row {
@@ -305,16 +300,13 @@
   background: rgba(31, 41, 55, 0.8);
   border: 1px solid rgba(75, 85, 99, 0.5);
   color: #f9fafb;
-  border-radius: 12px;
-  padding: 18px 0;
-  font-size: 1.4rem;
+  border-radius: 10px;
+  font-size: 1.3rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
-}
-
-.key:hover {
-  background: rgba(31, 41, 55, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .key:active {
@@ -332,10 +324,6 @@
   color: #fca5a5;
 }
 
-.key.danger:hover {
-  background: rgba(239, 68, 68, 0.2);
-}
-
 .key.equals {
   background: rgba(59, 130, 246, 0.9);
   border-color: rgba(59, 130, 246, 0.7);
@@ -343,6 +331,138 @@
   font-weight: 700;
 }
 
-.key.equals:hover {
-  background: rgba(59, 130, 246, 1);
+/* ============================================
+   DESKTOP: Layout lado a lado
+   ============================================ */
+@media (min-width: 768px) {
+  .main {
+    flex-direction: row;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px;
+    gap: 16px;
+  }
+  
+  .left-card, .right-card {
+    flex: 1;
+  }
+  
+  .card {
+    padding: 20px;
+  }
+  
+  .display-section {
+    min-height: 80px;
+    max-height: 80px;
+  }
+  
+  .display {
+    font-size: 2.8rem;
+    height: 56px;
+    line-height: 56px;
+  }
+  
+  .expression-input {
+    padding: 14px 16px;
+    font-size: 1.1rem;
+  }
+  
+  .voice-btn {
+    padding: 14px 24px;
+    font-size: 1rem;
+  }
+  
+  .frac-btn {
+    padding: 12px 4px;
+    font-size: 0.95rem;
+  }
+  
+  .key {
+    padding: 18px 0;
+    font-size: 1.4rem;
+  }
+}
+
+/* ============================================
+   MOBILE PEQUENO: Ultra compacto
+   ============================================ */
+@media (max-height: 700px) {
+  .header {
+    padding: 6px 10px;
+  }
+  
+  .logo {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .main {
+    padding: 6px;
+    gap: 6px;
+  }
+  
+  .card {
+    padding: 8px;
+    border-radius: 10px;
+  }
+  
+  .display-section {
+    min-height: 50px;
+    max-height: 50px;
+  }
+  
+  .display {
+    font-size: 1.6rem;
+    height: 32px;
+    line-height: 32px;
+  }
+  
+  .divider {
+    margin: 6px 0;
+  }
+  
+  .expression-input {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+  }
+  
+  .voice-btn {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+  
+  .voice-icon {
+    font-size: 1rem;
+  }
+  
+  .memory {
+    font-size: 0.75rem;
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+  
+  .fraction-pad {
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  
+  .frac-btn {
+    padding: 6px 2px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+  }
+  
+  .keypad {
+    gap: 4px;
+  }
+  
+  .keypad-row {
+    gap: 4px;
+  }
+  
+  .key {
+    font-size: 1.1rem;
+    border-radius: 8px;
+  }
 }
