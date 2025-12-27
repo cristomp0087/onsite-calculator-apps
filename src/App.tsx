@@ -386,16 +386,20 @@ export default function App() {
       // A IA retorna a expressão interpretada, nós calculamos localmente
       let exprToCalculate = '';
       
-      if (data.mode === 'inches' && data.a) {
-        // Monta a expressão a partir dos componentes
+      // CORRIGIDO: Aceita 'expression' para qualquer mode
+      if (data.expression) {
+        // Novo formato: IA retorna expression diretamente
+        exprToCalculate = data.expression;
+      } else if (data.a) {
+        // Formato antigo: IA retorna a, op, b separados
         if (data.op && data.b) {
           exprToCalculate = `${data.a} ${data.op} ${data.b}`;
         } else {
           exprToCalculate = data.a;
         }
-      } else if (data.mode === 'normal' && data.expression) {
-        exprToCalculate = data.expression;
       }
+      
+      console.log("[App] Expression to calculate:", exprToCalculate);
       
       if (exprToCalculate) {
         setExpression(exprToCalculate);
