@@ -8,11 +8,8 @@ type VoiceState = 'idle' | 'recording' | 'processing';
 
 interface CalculationResult {
   result: string;
-  expression?: string;
-  mode?: 'normal' | 'inches';
-  a?: string;
-  b?: string;
-  op?: string;
+  expression: string;
+  steps?: string[];
 }
 
 // ============================================
@@ -36,38 +33,52 @@ const KEYPAD = [
 ];
 
 // ============================================
-// CALCULATION ENGINE (Lógica Matemática)
+// CALCULATION ENGINE - MULTI-OPERAÇÃO COM PEMDAS
 // ============================================
-function parseInchValue(str: string): number {
+
+/**
+ * Converte um valor (com ou sem fração/feet) para polegadas decimais
+ * Exemplos: "5 1/2" → 5.5, "3'" → 36, "2' 6" → 30, "7" → 7
+ */
+function parseToInches(str: string): number {
   let s = str.trim().replace(/"/g, '');
-  let feet = 0;
+  let totalInches = 0;
   
+  // Verifica se tem feet (apóstrofo)
   if (s.includes("'")) {
     const parts = s.split("'");
-    feet = parseFloat(parts[0]) || 0;
+    const feet = parseFloat(parts[0]) || 0;
+    totalInches += feet * 12;
     s = parts[1] || '';
+    s = s.trim();
   }
   
-  s = s.trim();
-  if (!s) return feet * 12;
+  if (!s) return totalInches;
   
+  // Mixed number: "5 1/2" ou "10 3/8"
   const mixedMatch = s.match(/^(\d+)\s+(\d+)\/(\d+)$/);
   if (mixedMatch) {
     const whole = parseFloat(mixedMatch[1]);
     const num = parseFloat(mixedMatch[2]);
     const den = parseFloat(mixedMatch[3]);
-    return feet * 12 + whole + num / den;
+    return totalInches + whole + (num / den);
   }
   
+  // Simple fraction: "1/2" ou "3/8"
   const fracMatch = s.match(/^(\d+)\/(\d+)$/);
   if (fracMatch) {
-    return feet * 12 + parseFloat(fracMatch[1]) / parseFloat(fracMatch[2]);
+    return totalInches + (parseFloat(fracMatch[1]) / parseFloat(fracMatch[2]));
   }
   
-  return feet * 12 + (parseFloat(s) || 0);
+  // Whole number or decimal
+  return totalInches + (parseFloat(s) || 0);
 }
 
-function formatInchResult(inches: number): string {
+/**
+ * Formata polegadas decimais para formato de construção
+ * Exemplo: 11.5 → "11 1/2""
+ */
+function formatInches(inches: number): string {
   if (!isFinite(inches)) return 'Error';
   
   const negative = inches < 0;
@@ -79,6 +90,7 @@ function formatInchResult(inches: number): string {
   const whole = Math.floor(remaining);
   const frac = remaining - whole;
   
+  // Arredonda para o 1/16 mais próximo
   const sixteenths = Math.round(frac * 16);
   let fracStr = '';
   
@@ -86,6 +98,9 @@ function formatInchResult(inches: number): string {
     const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
     const d = gcd(sixteenths, 16);
     fracStr = ` ${sixteenths / d}/${16 / d}`;
+  } else if (sixteenths === 16) {
+    // Arredondou pra cima
+    remaining = whole + 1;
   }
   
   let result = '';
@@ -97,93 +112,177 @@ function formatInchResult(inches: number): string {
   return (negative ? '-' : '') + result.trim();
 }
 
-function evaluateExpression(expr: string): number | null {
-  try {
-    let e = expr
-      .replace(/×/g, '*')
-      .replace(/÷/g, '/')
-      .replace(/[^\d\s\.\+\-\*\/\(\)]/g, '');
+/**
+ * TOKENIZER: Quebra a expressão em tokens (números e operadores)
+ * "5 1/2 + 3 1/4 - 2" → ["5 1/2", "+", "3 1/4", "-", "2"]
+ */
+function tokenize(expression: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  const expr = expression.trim();
+  
+  for (let i = 0; i < expr.length; i++) {
+    const char = expr[i];
+    const nextChar = expr[i + 1] || '';
     
-    const result = Function(`"use strict"; return (${e})`)();
-    return typeof result === 'number' && isFinite(result) ? result : null;
-  } catch {
-    return null;
+    // Operadores (com espaço antes ou depois indica que é operador, não fração)
+    if ((char === '+' || char === '-' || char === '*' || char === '/' || char === '×' || char === '÷') 
+        && current.trim() !== '' 
+        && (expr[i-1] === ' ' || nextChar === ' ' || nextChar === '' || i === expr.length - 1)) {
+      
+      // Verifica se não é parte de uma fração (ex: 1/2)
+      // Fração: número/número sem espaços ao redor
+      if (char === '/' && /\d$/.test(current.trim()) && /^\d/.test(nextChar)) {
+        // É uma fração, continua acumulando
+        current += char;
+        continue;
+      }
+      
+      // É um operador
+      if (current.trim()) {
+        tokens.push(current.trim());
+      }
+      
+      // Normaliza operadores
+      let op = char;
+      if (char === '×') op = '*';
+      if (char === '÷') op = '/';
+      tokens.push(op);
+      current = '';
+    } else {
+      current += char;
+    }
   }
+  
+  // Último token
+  if (current.trim()) {
+    tokens.push(current.trim());
+  }
+  
+  console.log('[Tokenizer] Input:', expression, '→ Tokens:', tokens);
+  return tokens;
 }
 
+/**
+ * PARSER/EVALUATOR: Avalia tokens respeitando PEMDAS
+ * Primeiro processa * e /, depois + e -
+ */
+function evaluateTokens(tokens: string[]): number {
+  if (tokens.length === 0) return 0;
+  if (tokens.length === 1) return parseToInches(tokens[0]);
+  
+  // Converte valores para números (polegadas)
+  let values: (number | string)[] = tokens.map((t, i) => {
+    if (i % 2 === 0) {
+      // Posição par = valor
+      return parseToInches(t);
+    }
+    return t; // Operador
+  });
+  
+  console.log('[Evaluator] Parsed values:', values);
+  
+  // PASSO 1: Processa * e / (maior precedência)
+  let i = 1;
+  while (i < values.length) {
+    const op = values[i];
+    if (op === '*' || op === '/') {
+      const left = values[i - 1] as number;
+      const right = values[i + 1] as number;
+      let result: number;
+      
+      if (op === '*') {
+        result = left * right;
+      } else {
+        result = right !== 0 ? left / right : NaN;
+      }
+      
+      // Remove os 3 elementos (left, op, right) e insere o resultado
+      values.splice(i - 1, 3, result);
+      // Não incrementa i, pois o array encolheu
+    } else {
+      i += 2; // Pula para o próximo operador
+    }
+  }
+  
+  console.log('[Evaluator] After * /:', values);
+  
+  // PASSO 2: Processa + e - (menor precedência)
+  i = 1;
+  while (i < values.length) {
+    const op = values[i];
+    if (op === '+' || op === '-') {
+      const left = values[i - 1] as number;
+      const right = values[i + 1] as number;
+      let result: number;
+      
+      if (op === '+') {
+        result = left + right;
+      } else {
+        result = left - right;
+      }
+      
+      values.splice(i - 1, 3, result);
+      // Não incrementa i
+    } else {
+      i += 2;
+    }
+  }
+  
+  console.log('[Evaluator] Final result:', values[0]);
+  return values[0] as number;
+}
+
+/**
+ * FUNÇÃO PRINCIPAL DE CÁLCULO
+ * Aceita expressões como: "5 1/2 + 3 1/4 - 2 * 1/2"
+ */
 function calculate(expression: string): CalculationResult | null {
   const expr = expression.trim();
   if (!expr) return null;
   
-  console.log('[Math] Calculating:', expr);
-
-  const hasInches = /['"]|\d+\/\d+/.test(expr);
+  console.log('[Calculate] Input:', expr);
   
-  if (hasInches) {
-    let tempExpr = expr;
-    const fractions: string[] = [];
+  try {
+    // Verifica se tem conteúdo de polegadas (frações, feet, ou aspas)
+    const hasInchContent = /['"]|\d+\/\d+/.test(expr);
     
-    tempExpr = tempExpr.replace(/(\d+\s+)?(\d+\/\d+)/g, (match) => {
-      fractions.push(match);
-      return `__FRAC${fractions.length - 1}__`;
-    });
-    
-    const opMatch = tempExpr.match(/(.+?)\s*([\+\-\*])\s*(.+)/) || 
-                    tempExpr.match(/(.+?)\s+(\/)\s+(.+)/);
-    
-    if (opMatch) {
-      let aStr = opMatch[1];
-      let op = opMatch[2];
-      let bStr = opMatch[3];
-      
-      fractions.forEach((frac, i) => {
-        aStr = aStr.replace(`__FRAC${i}__`, frac);
-        bStr = bStr.replace(`__FRAC${i}__`, frac);
-      });
-      
-      const a = parseInchValue(aStr);
-      const b = parseInchValue(bStr);
-      
-      let result: number;
-      switch (op) {
-        case '+': result = a + b; break;
-        case '-': result = a - b; break;
-        case '*': result = a * b; break;
-        case '/': result = b !== 0 ? a / b : NaN; break;
-        default: return null;
+    // Se não tem conteúdo de polegadas E é uma expressão matemática simples
+    if (!hasInchContent && /^[\d\s\.\+\-\*\/\×\÷\(\)]+$/.test(expr)) {
+      // Avaliação matemática pura (sem polegadas)
+      try {
+        const cleanExpr = expr.replace(/×/g, '*').replace(/÷/g, '/');
+        const result = Function(`"use strict"; return (${cleanExpr})`)();
+        if (typeof result === 'number' && isFinite(result)) {
+          return {
+            result: result.toString(),
+            expression: expr
+          };
+        }
+      } catch {
+        // Continua para tentar como polegadas
       }
-      
-      return {
-        result: formatInchResult(result),
-        mode: 'inches',
-        a: aStr.trim(),
-        b: bStr.trim(),
-        op
-      };
     }
     
-    const singleValue = parseInchValue(expr);
-    if (!isNaN(singleValue)) {
-      return {
-        result: formatInchResult(singleValue),
-        mode: 'inches',
-        a: expr,
-        b: '',
-        op: ''
-      };
+    // Tokeniza e avalia como expressão de polegadas
+    const tokens = tokenize(expr);
+    
+    if (tokens.length === 0) {
+      return { result: 'Error', expression: expr };
     }
-  }
-  
-  const result = evaluateExpression(expr);
-  if (result !== null) {
+    
+    const resultInches = evaluateTokens(tokens);
+    const formatted = formatInches(resultInches);
+    
     return {
-      result: result.toString(),
-      mode: 'normal',
+      result: formatted,
       expression: expr
     };
+    
+  } catch (error) {
+    console.error('[Calculate] Error:', error);
+    return { result: 'Error', expression: expr };
   }
-  
-  return { result: 'Error', expression: expr };
 }
 
 // ============================================
@@ -284,25 +383,31 @@ export default function App() {
       const data = await response.json();
       console.log("[App] AI Response:", data);
 
+      // A IA retorna a expressão interpretada, nós calculamos localmente
+      let exprToCalculate = '';
+      
       if (data.mode === 'inches' && data.a) {
-        const expr = data.op ? `${data.a} ${data.op} ${data.b}` : data.a;
-        setExpression(expr);
-        const res = calculate(expr);
-        if (res) {
-          setDisplayValue(res.result);
-          setLastResult(res);
-          setJustCalculated(true);
+        // Monta a expressão a partir dos componentes
+        if (data.op && data.b) {
+          exprToCalculate = `${data.a} ${data.op} ${data.b}`;
+        } else {
+          exprToCalculate = data.a;
         }
       } else if (data.mode === 'normal' && data.expression) {
-        setExpression(data.expression);
-        const res = calculate(data.expression);
+        exprToCalculate = data.expression;
+      }
+      
+      if (exprToCalculate) {
+        setExpression(exprToCalculate);
+        const res = calculate(exprToCalculate);
         if (res) {
           setDisplayValue(res.result);
           setLastResult(res);
           setJustCalculated(true);
+        } else {
+          setDisplayValue('Error');
         }
       } else {
-        // Fallback genérico se a IA retornar algo fora do padrão
         setDisplayValue('Try again');
       }
     } catch (error) {
@@ -322,7 +427,7 @@ export default function App() {
     
     if (voiceState === 'idle') {
       setVoiceState('recording');
-      setDisplayValue('Gravando...');
+      setDisplayValue('🎙️');
       setExpression(''); // Limpa input anterior ao gravar novo
       startRecording();
     }
@@ -402,9 +507,9 @@ export default function App() {
 
   const getVoiceButtonText = () => {
     if (!isOnline) return 'Offline';
-    if (voiceState === 'recording') return 'Solte para Enviar';
+    if (voiceState === 'recording') return 'Release to Send';
     if (voiceState === 'processing') return 'Thinking...';
-    return 'Segure para Falar';
+    return 'Hold to Speak';
   };
 
   return (
@@ -442,8 +547,17 @@ export default function App() {
               setExpression(e.target.value);
               setJustCalculated(false);
             }}
-            onKeyDown={(e) => e.key === 'Enter' && calculate(expression)}
-            placeholder="Resultado da IA aparecerá aqui..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const res = calculate(expression);
+                if (res) {
+                  setDisplayValue(res.result);
+                  setLastResult(res);
+                  setJustCalculated(true);
+                }
+              }
+            }}
+            placeholder="Type or speak: 5 1/2 + 3 1/4 - 2"
           />
           
           <button
@@ -459,21 +573,20 @@ export default function App() {
             <span className="voice-text">{getVoiceButtonText()}</span>
           </button>
 
-          {/* Memory Display (Restaurado) */}
-          {lastResult && lastResult.mode === 'inches' && lastResult.a && lastResult.b && lastResult.op && (
+          {/* Memory Display */}
+          {lastResult && lastResult.expression && (
             <div className="memory">
-              <div>{lastResult.a}</div>
-              <div>{lastResult.op} {lastResult.b}</div>
+              <div className="memory-expr">{lastResult.expression}</div>
               <div className="memory-line">────────</div>
             </div>
           )}
         </div>
 
-        {/* Right Card: Keypad & Fractions (Restaurado) */}
+        {/* Right Card: Keypad & Fractions */}
         <div className="card right-card">
           <div className="fraction-label">MEASURES</div>
           
-          {/* Grid de Frações (Recuperado) */}
+          {/* Grid de Frações */}
           <div className="fraction-pad">
             {FRACTION_PAD.flat().map((frac, i) => (
               <button
@@ -486,7 +599,7 @@ export default function App() {
             ))}
           </div>
 
-          {/* Grid Numérico (Recuperado) */}
+          {/* Grid Numérico */}
           <div className="keypad">
             {KEYPAD.map((row, rowIndex) => (
               <div key={rowIndex} className={`keypad-row ${rowIndex === KEYPAD.length - 1 ? 'last-row' : ''}`}>
