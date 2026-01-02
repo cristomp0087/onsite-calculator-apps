@@ -7,9 +7,11 @@ import './App.css';
 type VoiceState = 'idle' | 'recording' | 'processing';
 
 interface CalculationResult {
-  result: string;
+  resultFeetInches: string;  // Ex: "8' 1""
+  resultTotalInches: string; // Ex: "97.00 In"
+  resultDecimal: number;     // Ex: 97 (para cálculos)
   expression: string;
-  steps?: string[];
+  isInchMode: boolean;       // true = mostra polegadas, false = número puro
 }
 
 // ============================================
@@ -236,6 +238,7 @@ function evaluateTokens(tokens: string[]): number {
 /**
  * FUNÇÃO PRINCIPAL DE CÁLCULO
  * Aceita expressões como: "5 1/2 + 3 1/4 - 2 * 1/2"
+ * Retorna resultado em dois formatos: pés/polegadas e polegadas totais
  */
 function calculate(expression: string): CalculationResult | null {
   const expr = expression.trim();
@@ -244,19 +247,65 @@ function calculate(expression: string): CalculationResult | null {
   console.log('[Calculate] Input:', expr);
   
   try {
+    // PORCENTAGEM: Trata separadamente (não mistura com frações)
+    // Formato: "100 + 10%" = 100 + (100 * 0.10) = 110
+    // Ou simples: "50 % 2" = 50 % 2 = 0 (módulo)
+    if (expr.includes('%')) {
+      // Verifica se é cálculo de porcentagem tipo "100 + 10%"
+      const percentMatch = expr.match(/^([\d.]+)\s*([\+\-])\s*([\d.]+)\s*%$/);
+      if (percentMatch) {
+        const base = parseFloat(percentMatch[1]);
+        const op = percentMatch[2];
+        const percent = parseFloat(percentMatch[3]);
+        const percentValue = base * (percent / 100);
+        const result = op === '+' ? base + percentValue : base - percentValue;
+        
+        return {
+          resultFeetInches: result.toFixed(2),
+          resultTotalInches: result.toFixed(2),
+          resultDecimal: result,
+          expression: expr,
+          isInchMode: false
+        };
+      }
+      
+      // Porcentagem simples: "20% de 150" ou "150 * 20%"
+      const simplePercentMatch = expr.match(/^([\d.]+)\s*%\s*(?:of|de|×|\*)?\s*([\d.]+)$/i) ||
+                                  expr.match(/^([\d.]+)\s*(?:×|\*)\s*([\d.]+)\s*%$/);
+      if (simplePercentMatch) {
+        const a = parseFloat(simplePercentMatch[1]);
+        const b = parseFloat(simplePercentMatch[2]);
+        // Determina qual é a porcentagem
+        const result = expr.includes('%') && expr.indexOf('%') < expr.length / 2 
+          ? (a / 100) * b 
+          : a * (b / 100);
+        
+        return {
+          resultFeetInches: result.toFixed(2),
+          resultTotalInches: result.toFixed(2),
+          resultDecimal: result,
+          expression: expr,
+          isInchMode: false
+        };
+      }
+    }
+    
     // Verifica se tem conteúdo de polegadas (frações, feet, ou aspas)
     const hasInchContent = /['"]|\d+\/\d+/.test(expr);
     
     // Se não tem conteúdo de polegadas E é uma expressão matemática simples
-    if (!hasInchContent && /^[\d\s\.\+\-\*\/\×\÷\(\)]+$/.test(expr)) {
+    if (!hasInchContent && /^[\d\s\.\+\-\*\/\×\÷\(\)%]+$/.test(expr)) {
       // Avaliação matemática pura (sem polegadas)
       try {
         const cleanExpr = expr.replace(/×/g, '*').replace(/÷/g, '/');
         const result = Function(`"use strict"; return (${cleanExpr})`)();
         if (typeof result === 'number' && isFinite(result)) {
           return {
-            result: result.toString(),
-            expression: expr
+            resultFeetInches: result.toString(),
+            resultTotalInches: result.toString(),
+            resultDecimal: result,
+            expression: expr,
+            isInchMode: false
           };
         }
       } catch {
@@ -268,20 +317,36 @@ function calculate(expression: string): CalculationResult | null {
     const tokens = tokenize(expr);
     
     if (tokens.length === 0) {
-      return { result: 'Error', expression: expr };
+      return { 
+        resultFeetInches: 'Error', 
+        resultTotalInches: 'Error',
+        resultDecimal: 0,
+        expression: expr,
+        isInchMode: true
+      };
     }
     
     const resultInches = evaluateTokens(tokens);
-    const formatted = formatInches(resultInches);
+    const formattedFeetInches = formatInches(resultInches);
+    const formattedTotalInches = resultInches.toFixed(2) + ' In';
     
     return {
-      result: formatted,
-      expression: expr
+      resultFeetInches: formattedFeetInches,
+      resultTotalInches: formattedTotalInches,
+      resultDecimal: resultInches,
+      expression: expr,
+      isInchMode: true
     };
     
   } catch (error) {
     console.error('[Calculate] Error:', error);
-    return { result: 'Error', expression: expr };
+    return { 
+      resultFeetInches: 'Error', 
+      resultTotalInches: 'Error',
+      resultDecimal: 0,
+      expression: expr,
+      isInchMode: true
+    };
   }
 }
 
@@ -405,7 +470,7 @@ export default function App() {
         setExpression(exprToCalculate);
         const res = calculate(exprToCalculate);
         if (res) {
-          setDisplayValue(res.result);
+          setDisplayValue(res.resultFeetInches);
           setLastResult(res);
           setJustCalculated(true);
         } else {
@@ -461,7 +526,7 @@ export default function App() {
       case '=':
         const res = calculate(expression);
         if (res) {
-          setDisplayValue(res.result);
+          setDisplayValue(res.resultFeetInches);
           setLastResult(res);
           setJustCalculated(true);
         }
@@ -536,9 +601,20 @@ export default function App() {
       <main className="main">
         {/* Left Card: Display & Voice */}
         <div className="card left-card">
+          {/* Display com dois resultados como na imagem */}
           <div className="display-section">
-            <div className="display-label">RESULT</div>
-            <div className={`display ${voiceState}`}>{displayValue}</div>
+            <div className="display-row">
+              <div className="display-box primary">
+                <span className={`display-value ${voiceState}`}>
+                  {lastResult?.isInchMode ? lastResult.resultFeetInches : displayValue}
+                </span>
+              </div>
+              {lastResult?.isInchMode && (
+                <div className="display-box secondary">
+                  <span className="display-value-secondary">{lastResult.resultTotalInches}</span>
+                </div>
+              )}
+            </div>
           </div>
           
           <div className="divider" />
@@ -555,7 +631,7 @@ export default function App() {
               if (e.key === 'Enter') {
                 const res = calculate(expression);
                 if (res) {
-                  setDisplayValue(res.result);
+                  setDisplayValue(res.resultFeetInches);
                   setLastResult(res);
                   setJustCalculated(true);
                 }
