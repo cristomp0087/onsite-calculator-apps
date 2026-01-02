@@ -115,6 +115,51 @@ function formatInches(inches: number): string {
 }
 
 /**
+ * Formata polegadas totais COM FRAÇÃO (não decimal)
+ * Exemplo: 24.875 → "24 7/8 In"
+ */
+function formatTotalInches(inches: number): string {
+  if (!isFinite(inches)) return 'Error';
+  
+  const negative = inches < 0;
+  inches = Math.abs(inches);
+  
+  const whole = Math.floor(inches);
+  const frac = inches - whole;
+  
+  // Arredonda para o 1/16 mais próximo
+  const sixteenths = Math.round(frac * 16);
+  let fracStr = '';
+  
+  if (sixteenths > 0 && sixteenths < 16) {
+    const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+    const d = gcd(sixteenths, 16);
+    fracStr = ` ${sixteenths / d}/${16 / d}`;
+  }
+  
+  let result = (negative ? '-' : '') + whole + fracStr + ' In';
+  return result;
+}
+
+/**
+ * Formata número: inteiro sem decimais, quebrado com decimais
+ * Exemplo: 2.0 → "2", 2.5 → "2.5"
+ */
+function formatNumber(num: number): string {
+  if (!isFinite(num)) return 'Error';
+  
+  // Se é inteiro, mostra sem decimais
+  if (Number.isInteger(num)) {
+    return num.toString();
+  }
+  
+  // Se tem decimais, mostra com até 2 casas (remove zeros à direita)
+  const fixed = num.toFixed(2);
+  // Remove zeros desnecessários: "2.50" → "2.5", "2.00" → "2"
+  return parseFloat(fixed).toString();
+}
+
+/**
  * TOKENIZER: Quebra a expressão em tokens (números e operadores)
  * "5 1/2 + 3 1/4 - 2" → ["5 1/2", "+", "3 1/4", "-", "2"]
  */
@@ -261,8 +306,8 @@ function calculate(expression: string): CalculationResult | null {
         const result = op === '+' ? base + percentValue : base - percentValue;
         
         return {
-          resultFeetInches: result.toFixed(2),
-          resultTotalInches: result.toFixed(2),
+          resultFeetInches: formatNumber(result),
+          resultTotalInches: formatNumber(result),
           resultDecimal: result,
           expression: expr,
           isInchMode: false
@@ -281,8 +326,8 @@ function calculate(expression: string): CalculationResult | null {
           : a * (b / 100);
         
         return {
-          resultFeetInches: result.toFixed(2),
-          resultTotalInches: result.toFixed(2),
+          resultFeetInches: formatNumber(result),
+          resultTotalInches: formatNumber(result),
           resultDecimal: result,
           expression: expr,
           isInchMode: false
@@ -328,7 +373,7 @@ function calculate(expression: string): CalculationResult | null {
     
     const resultInches = evaluateTokens(tokens);
     const formattedFeetInches = formatInches(resultInches);
-    const formattedTotalInches = resultInches.toFixed(2) + ' In';
+    const formattedTotalInches = formatTotalInches(resultInches);
     
     return {
       resultFeetInches: formattedFeetInches,
