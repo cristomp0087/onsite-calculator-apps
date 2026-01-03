@@ -555,16 +555,31 @@ export default function App() {
     }
   };
 
-  // RESTAURADO: Lógica de teclado numérico
+  // Lógica de teclado numérico COM MEMÓRIA AUTOMÁTICA
   const handleKeypadInput = useCallback((value: string) => {
-    if (justCalculated && !'+-*/'.includes(value)) {
-      setExpression(value);
-      setJustCalculated(false);
+    const isOperator = [' + ', ' - ', ' * ', ' / ', ' % '].includes(value);
+    
+    if (justCalculated) {
+      if (isOperator && lastResult) {
+        // MEMÓRIA: Usuário clicou operador após resultado
+        // Usa o resultado anterior como primeiro elemento da nova conta
+        // Mantém o formato original (polegadas ou número)
+        const previousResult = lastResult.isInchMode 
+          ? lastResult.resultFeetInches.replace('"', '') // Remove " para continuar operação
+          : lastResult.resultFeetInches;
+        
+        setExpression(previousResult + value);
+        setJustCalculated(false);
+      } else {
+        // Usuário clicou número/fração após resultado → começa nova conta
+        setExpression(value);
+        setJustCalculated(false);
+      }
     } else {
+      // Operação normal: continua adicionando à expressão
       setExpression(prev => prev + value);
-      setJustCalculated(false);
     }
-  }, [justCalculated]);
+  }, [justCalculated, lastResult]);
 
   const handleKeyClick = (key: string) => {
     switch (key) {
