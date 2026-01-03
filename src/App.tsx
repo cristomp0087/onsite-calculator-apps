@@ -1,5 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import './App.css';
+import AuthScreen from './components/AuthScreen';
+import VoiceUpgradePopup from './components/VoiceUpgradePopup';
+import { supabase, getSession, isSupabaseEnabled } from './lib/supabase';
+import type { User, Session } from '@supabase/supabase-js';
 
 // ============================================
 // TYPES
@@ -468,11 +472,109 @@ function useOnlineStatus() {
 export default function App() {
   const isOnline = useOnlineStatus();
   
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [hasVoiceAccess, setHasVoiceAccess] = useState(false);
+  const [showVoicePopup, setShowVoicePopup] = useState(false);
+  
+  // Calculator state
   const [expression, setExpression] = useState('');
   const [displayValue, setDisplayValue] = useState('0');
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [lastResult, setLastResult] = useState<CalculationResult | null>(null);
   const [justCalculated, setJustCalculated] = useState(false);
+  
+  // Check auth on mount
+  useEffect(() => {
+    async function checkAuth() {
+      if (!isSupabaseEnabled()) {
+        // Se Supabase não está configurado, permite uso sem login (dev mode)
+        setIsAuthenticated(true);
+        setIsCheckingAuth(false);
+        return;
+      }
+      
+      try {
+        const session = await getSession();
+        if (session?.user) {
+          setUser(session.user);
+          setIsAuthenticated(true);
+          
+          // Verifica se tem acesso ao Voice (trial ou assinatura ativa)
+          await checkVoiceAccess(session.user.id);
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    }
+    
+    checkAuth();
+    
+    // Listen for auth changes
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if (session?.user) {
+            setUser(session.user);
+            setIsAuthenticated(true);
+            await checkVoiceAccess(session.user.id);
+          } else {
+            setUser(null);
+            setIsAuthenticated(false);
+            setHasVoiceAccess(false);
+          }
+        }
+      );
+      
+      return () => subscription.unsubscribe();
+    }
+  }, []);
+  
+  // Check if user has voice access (trial or subscription)
+  async function checkVoiceAccess(userId: string) {
+    if (!supabase) return;
+    
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('subscription_status, trial_ends_at')
+        .eq('id', userId)
+        .single();
+      
+      if (profile) {
+        const isTrialing = profile.subscription_status === 'trialing' && 
+          new Date(profile.trial_ends_at) > new Date();
+        const isActive = profile.subscription_status === 'active';
+        
+        setHasVoiceAccess(isTrialing || isActive);
+      }
+    } catch (error) {
+      console.error('Check voice access error:', error);
+    }
+  }
+  
+  // Handle auth success
+  const handleAuthSuccess = async () => {
+    const session = await getSession();
+    if (session?.user) {
+      setUser(session.user);
+      setIsAuthenticated(true);
+      await checkVoiceAccess(session.user.id);
+    }
+  };
+  
+  // Handle voice button click
+  const handleVoiceButtonClick = () => {
+    if (!hasVoiceAccess) {
+      setShowVoicePopup(true);
+      return false; // Não inicia gravação
+    }
+    return true; // Pode iniciar gravação
+  };
   
   // Função para enviar o áudio gravado
   const handleAudioUpload = async (audioBlob: Blob) => {
@@ -538,6 +640,11 @@ export default function App() {
   const handleVoiceStart = (e: any) => {
     e.preventDefault(); // Previne seleção de texto no mobile
     if (!isOnline) return;
+    
+    // Verifica se tem acesso ao Voice
+    if (!handleVoiceButtonClick()) {
+      return; // Mostra popup de upgrade
+    }
     
     if (voiceState === 'idle') {
       setVoiceState('recording');
@@ -636,26 +743,81 @@ export default function App() {
 
   const getVoiceButtonText = () => {
     if (!isOnline) return 'Offline';
+    if (!hasVoiceAccess) return '🔒 Upgrade to Voice';
     if (voiceState === 'recording') return 'Release to Send';
     if (voiceState === 'processing') return 'Thinking...';
     return 'Hold to Speak';
   };
+  
+  // Logout function
+  const handleLogout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    setUser(null);
+    setIsAuthenticated(false);
+    setHasVoiceAccess(false);
+  };
 
+  // Loading state with timeout
+  if (isCheckingAuth) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ textAlign: 'center' }}>
+          <div className="auth-spinner" style={{ margin: '0 auto 16px', borderTopColor: '#f59e0b' }}></div>
+          <p style={{ color: '#6b7280' }}>Loading...</p>
+          <button 
+            onClick={() => {
+              setIsCheckingAuth(false);
+              setIsAuthenticated(false);
+            }}
+            style={{ 
+              marginTop: '16px', 
+              background: 'none', 
+              border: 'none', 
+              color: '#f59e0b', 
+              cursor: 'pointer',
+              fontSize: '0.875rem'
+            }}
+          >
+            Taking too long? Click here
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Auth screen (if not authenticated)
+  if (!isAuthenticated) {
+    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  // Main calculator
   return (
     <div className="app">
+      {/* Voice Upgrade Popup */}
+      {showVoicePopup && (
+        <VoiceUpgradePopup 
+          onClose={() => setShowVoicePopup(false)} 
+          userEmail={user?.email}
+        />
+      )}
+      
       {/* Header */}
       <header className="header">
         <div className="brand">
           <div className="logo">✓</div>
           <div className="brand-text">
             <span className="brand-title">OnSite</span>
-            <span className="brand-subtitle">AI AUDIO</span>
+            <span className="brand-subtitle">CALCULATOR</span>
           </div>
         </div>
-        {!isOnline && <div className="offline-badge">Offline</div>}
-        <a href="https://onsiteclub.ca" target="_blank" rel="noopener noreferrer" className="website-btn">
-          🌐 Site
-        </a>
+        <div className="header-actions">
+          {!isOnline && <div className="offline-badge">Offline</div>}
+          <button onClick={handleLogout} className="logout-btn" title="Logout">
+            ↪️
+          </button>
+        </div>
       </header>
 
       <main className="main">
