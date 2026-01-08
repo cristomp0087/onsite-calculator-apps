@@ -58,6 +58,11 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
+      - name: Clear Gradle cache
+        run: rm -rf ~/.gradle/caches/
+
+      - name: Build APK (Debug)
+
       - name: Build APK (Debug)
         run: |
           cd android
