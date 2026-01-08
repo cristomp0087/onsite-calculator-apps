@@ -45,7 +45,12 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Add Android platform
-        run: npx cap add android
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          else
+            echo "Android platform already exists, skipping."
+          fi
 
       - name: Sync Capacitor
         run: npx cap sync android
