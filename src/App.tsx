@@ -1,9 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import './App.css';
-import AuthScreen from './components/AuthScreen';
 import VoiceUpgradePopup from './components/VoiceUpgradePopup';
-import { supabase, getSession, isSupabaseEnabled } from './lib/supabase';
-import type { User, Session } from '@supabase/supabase-js';
 
 // ============================================
 // TYPES
@@ -11,11 +8,11 @@ import type { User, Session } from '@supabase/supabase-js';
 type VoiceState = 'idle' | 'recording' | 'processing';
 
 interface CalculationResult {
-  resultFeetInches: string;  // Ex: "8' 1""
-  resultTotalInches: string; // Ex: "97.00 In"
-  resultDecimal: number;     // Ex: 97 (para cálculos)
+  resultFeetInches: string;
+  resultTotalInches: string;
+  resultDecimal: number;
   expression: string;
-  isInchMode: boolean;       // true = mostra polegadas, false = número puro
+  isInchMode: boolean;
 }
 
 // ============================================
@@ -23,13 +20,11 @@ interface CalculationResult {
 // ============================================
 const API_ENDPOINT = '/api/interpret';
 
-// RESTAURADO: O painel de frações original
 const FRACTION_PAD = [
   ['1/8"', '1/4"', '3/8"', '1/2"'],
   ['5/8"', '3/4"', '7/8"', "'ft"],
 ];
 
-// RESTAURADO: O teclado completo
 const KEYPAD = [
   ['C', '⌫', '%', '÷'],
   ['7', '8', '9', '×'],
@@ -39,18 +34,13 @@ const KEYPAD = [
 ];
 
 // ============================================
-// CALCULATION ENGINE - MULTI-OPERAÇÃO COM PEMDAS
+// CALCULATION ENGINE
 // ============================================
 
-/**
- * Converte um valor (com ou sem fração/feet) para polegadas decimais
- * Exemplos: "5 1/2" → 5.5, "3'" → 36, "2' 6" → 30, "7" → 7
- */
 function parseToInches(str: string): number {
   let s = str.trim().replace(/"/g, '');
   let totalInches = 0;
   
-  // Verifica se tem feet (apóstrofo)
   if (s.includes("'")) {
     const parts = s.split("'");
     const feet = parseFloat(parts[0]) || 0;
@@ -61,7 +51,6 @@ function parseToInches(str: string): number {
   
   if (!s) return totalInches;
   
-  // Mixed number: "5 1/2" ou "10 3/8"
   const mixedMatch = s.match(/^(\d+)\s+(\d+)\/(\d+)$/);
   if (mixedMatch) {
     const whole = parseFloat(mixedMatch[1]);
@@ -70,20 +59,14 @@ function parseToInches(str: string): number {
     return totalInches + whole + (num / den);
   }
   
-  // Simple fraction: "1/2" ou "3/8"
   const fracMatch = s.match(/^(\d+)\/(\d+)$/);
   if (fracMatch) {
     return totalInches + (parseFloat(fracMatch[1]) / parseFloat(fracMatch[2]));
   }
   
-  // Whole number or decimal
   return totalInches + (parseFloat(s) || 0);
 }
 
-/**
- * Formata polegadas decimais para formato de construção
- * Exemplo: 11.5 → "11 1/2""
- */
 function formatInches(inches: number): string {
   if (!isFinite(inches)) return 'Error';
   
@@ -96,7 +79,6 @@ function formatInches(inches: number): string {
   const whole = Math.floor(remaining);
   const frac = remaining - whole;
   
-  // Arredonda para o 1/16 mais próximo
   const sixteenths = Math.round(frac * 16);
   let fracStr = '';
   
@@ -105,7 +87,6 @@ function formatInches(inches: number): string {
     const d = gcd(sixteenths, 16);
     fracStr = ` ${sixteenths / d}/${16 / d}`;
   } else if (sixteenths === 16) {
-    // Arredondou pra cima
     remaining = whole + 1;
   }
   
@@ -118,55 +99,28 @@ function formatInches(inches: number): string {
   return (negative ? '-' : '') + result.trim();
 }
 
-/**
- * Formata polegadas totais COM FRAÇÃO (não decimal)
- * Exemplo: 24.875 → "24 7/8 In"
- */
 function formatTotalInches(inches: number): string {
   if (!isFinite(inches)) return 'Error';
-  
   const negative = inches < 0;
   inches = Math.abs(inches);
-  
   const whole = Math.floor(inches);
   const frac = inches - whole;
-  
-  // Arredonda para o 1/16 mais próximo
   const sixteenths = Math.round(frac * 16);
   let fracStr = '';
-  
   if (sixteenths > 0 && sixteenths < 16) {
     const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
     const d = gcd(sixteenths, 16);
     fracStr = ` ${sixteenths / d}/${16 / d}`;
   }
-  
-  let result = (negative ? '-' : '') + whole + fracStr + ' In';
-  return result;
+  return (negative ? '-' : '') + whole + fracStr + ' In';
 }
 
-/**
- * Formata número: inteiro sem decimais, quebrado com decimais
- * Exemplo: 2.0 → "2", 2.5 → "2.5"
- */
 function formatNumber(num: number): string {
   if (!isFinite(num)) return 'Error';
-  
-  // Se é inteiro, mostra sem decimais
-  if (Number.isInteger(num)) {
-    return num.toString();
-  }
-  
-  // Se tem decimais, mostra com até 2 casas (remove zeros à direita)
-  const fixed = num.toFixed(2);
-  // Remove zeros desnecessários: "2.50" → "2.5", "2.00" → "2"
-  return parseFloat(fixed).toString();
+  if (Number.isInteger(num)) return num.toString();
+  return parseFloat(num.toFixed(2)).toString();
 }
 
-/**
- * TOKENIZER: Quebra a expressão em tokens (números e operadores)
- * "5 1/2 + 3 1/4 - 2" → ["5 1/2", "+", "3 1/4", "-", "2"]
- */
 function tokenize(expression: string): string[] {
   const tokens: string[] = [];
   let current = '';
@@ -176,25 +130,17 @@ function tokenize(expression: string): string[] {
     const char = expr[i];
     const nextChar = expr[i + 1] || '';
     
-    // Operadores (com espaço antes ou depois indica que é operador, não fração)
     if ((char === '+' || char === '-' || char === '*' || char === '/' || char === '×' || char === '÷') 
         && current.trim() !== '' 
         && (expr[i-1] === ' ' || nextChar === ' ' || nextChar === '' || i === expr.length - 1)) {
       
-      // Verifica se não é parte de uma fração (ex: 1/2)
-      // Fração: número/número sem espaços ao redor
       if (char === '/' && /\d$/.test(current.trim()) && /^\d/.test(nextChar)) {
-        // É uma fração, continua acumulando
         current += char;
         continue;
       }
       
-      // É um operador
-      if (current.trim()) {
-        tokens.push(current.trim());
-      }
+      if (current.trim()) tokens.push(current.trim());
       
-      // Normaliza operadores
       let op = char;
       if (char === '×') op = '*';
       if (char === '÷') op = '/';
@@ -204,103 +150,53 @@ function tokenize(expression: string): string[] {
       current += char;
     }
   }
-  
-  // Último token
-  if (current.trim()) {
-    tokens.push(current.trim());
-  }
-  
-  console.log('[Tokenizer] Input:', expression, '→ Tokens:', tokens);
+  if (current.trim()) tokens.push(current.trim());
   return tokens;
 }
 
-/**
- * PARSER/EVALUATOR: Avalia tokens respeitando PEMDAS
- * Primeiro processa * e /, depois + e -
- */
 function evaluateTokens(tokens: string[]): number {
   if (tokens.length === 0) return 0;
   if (tokens.length === 1) return parseToInches(tokens[0]);
   
-  // Converte valores para números (polegadas)
   let values: (number | string)[] = tokens.map((t, i) => {
-    if (i % 2 === 0) {
-      // Posição par = valor
-      return parseToInches(t);
-    }
-    return t; // Operador
+    if (i % 2 === 0) return parseToInches(t);
+    return t;
   });
   
-  console.log('[Evaluator] Parsed values:', values);
-  
-  // PASSO 1: Processa * e / (maior precedência)
   let i = 1;
   while (i < values.length) {
     const op = values[i];
     if (op === '*' || op === '/') {
       const left = values[i - 1] as number;
       const right = values[i + 1] as number;
-      let result: number;
-      
-      if (op === '*') {
-        result = left * right;
-      } else {
-        result = right !== 0 ? left / right : NaN;
-      }
-      
-      // Remove os 3 elementos (left, op, right) e insere o resultado
+      let result = op === '*' ? left * right : (right !== 0 ? left / right : NaN);
       values.splice(i - 1, 3, result);
-      // Não incrementa i, pois o array encolheu
     } else {
-      i += 2; // Pula para o próximo operador
+      i += 2;
     }
   }
   
-  console.log('[Evaluator] After * /:', values);
-  
-  // PASSO 2: Processa + e - (menor precedência)
   i = 1;
   while (i < values.length) {
     const op = values[i];
     if (op === '+' || op === '-') {
       const left = values[i - 1] as number;
       const right = values[i + 1] as number;
-      let result: number;
-      
-      if (op === '+') {
-        result = left + right;
-      } else {
-        result = left - right;
-      }
-      
+      let result = op === '+' ? left + right : left - right;
       values.splice(i - 1, 3, result);
-      // Não incrementa i
     } else {
       i += 2;
     }
   }
-  
-  console.log('[Evaluator] Final result:', values[0]);
   return values[0] as number;
 }
 
-/**
- * FUNÇÃO PRINCIPAL DE CÁLCULO
- * Aceita expressões como: "5 1/2 + 3 1/4 - 2 * 1/2"
- * Retorna resultado em dois formatos: pés/polegadas e polegadas totais
- */
 function calculate(expression: string): CalculationResult | null {
   const expr = expression.trim();
   if (!expr) return null;
   
-  console.log('[Calculate] Input:', expr);
-  
   try {
-    // PORCENTAGEM: Trata separadamente (não mistura com frações)
-    // Formato: "100 + 10%" = 100 + (100 * 0.10) = 110
-    // Ou simples: "50 % 2" = 50 % 2 = 0 (módulo)
     if (expr.includes('%')) {
-      // Verifica se é cálculo de porcentagem tipo "100 + 10%"
       const percentMatch = expr.match(/^([\d.]+)\s*([\+\-])\s*([\d.]+)\s*%$/);
       if (percentMatch) {
         const base = parseFloat(percentMatch[1]);
@@ -308,7 +204,6 @@ function calculate(expression: string): CalculationResult | null {
         const percent = parseFloat(percentMatch[3]);
         const percentValue = base * (percent / 100);
         const result = op === '+' ? base + percentValue : base - percentValue;
-        
         return {
           resultFeetInches: formatNumber(result),
           resultTotalInches: formatNumber(result),
@@ -318,17 +213,14 @@ function calculate(expression: string): CalculationResult | null {
         };
       }
       
-      // Porcentagem simples: "20% de 150" ou "150 * 20%"
       const simplePercentMatch = expr.match(/^([\d.]+)\s*%\s*(?:of|de|×|\*)?\s*([\d.]+)$/i) ||
-                                  expr.match(/^([\d.]+)\s*(?:×|\*)\s*([\d.]+)\s*%$/);
+                                 expr.match(/^([\d.]+)\s*(?:×|\*)\s*([\d.]+)\s*%$/);
       if (simplePercentMatch) {
         const a = parseFloat(simplePercentMatch[1]);
         const b = parseFloat(simplePercentMatch[2]);
-        // Determina qual é a porcentagem
         const result = expr.includes('%') && expr.indexOf('%') < expr.length / 2 
           ? (a / 100) * b 
           : a * (b / 100);
-        
         return {
           resultFeetInches: formatNumber(result),
           resultTotalInches: formatNumber(result),
@@ -339,12 +231,8 @@ function calculate(expression: string): CalculationResult | null {
       }
     }
     
-    // Verifica se tem conteúdo de polegadas (frações, feet, ou aspas)
     const hasInchContent = /['"]|\d+\/\d+/.test(expr);
-    
-    // Se não tem conteúdo de polegadas E é uma expressão matemática simples
     if (!hasInchContent && /^[\d\s\.\+\-\*\/\×\÷\(\)%]+$/.test(expr)) {
-      // Avaliação matemática pura (sem polegadas)
       try {
         const cleanExpr = expr.replace(/×/g, '*').replace(/÷/g, '/');
         const result = Function(`"use strict"; return (${cleanExpr})`)();
@@ -357,31 +245,16 @@ function calculate(expression: string): CalculationResult | null {
             isInchMode: false
           };
         }
-      } catch {
-        // Continua para tentar como polegadas
-      }
+      } catch {}
     }
     
-    // Tokeniza e avalia como expressão de polegadas
     const tokens = tokenize(expr);
-    
-    if (tokens.length === 0) {
-      return { 
-        resultFeetInches: 'Error', 
-        resultTotalInches: 'Error',
-        resultDecimal: 0,
-        expression: expr,
-        isInchMode: true
-      };
-    }
+    if (tokens.length === 0) throw new Error("Empty tokens");
     
     const resultInches = evaluateTokens(tokens);
-    const formattedFeetInches = formatInches(resultInches);
-    const formattedTotalInches = formatTotalInches(resultInches);
-    
     return {
-      resultFeetInches: formattedFeetInches,
-      resultTotalInches: formattedTotalInches,
+      resultFeetInches: formatInches(resultInches),
+      resultTotalInches: formatTotalInches(resultInches),
       resultDecimal: resultInches,
       expression: expr,
       isInchMode: true
@@ -400,8 +273,9 @@ function calculate(expression: string): CalculationResult | null {
 }
 
 // ============================================
-// HOOK: AUDIO RECORDER (O Novo Ouvido)
+// HOOKS
 // ============================================
+
 function useAudioRecorder(onRecordingComplete: (audioBlob: Blob) => void) {
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
@@ -412,28 +286,20 @@ function useAudioRecorder(onRecordingComplete: (audioBlob: Blob) => void) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       audioChunks.current = [];
-
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunks.current.push(event.data);
-        }
+        if (event.data.size > 0) audioChunks.current.push(event.data);
       };
-
       recorder.onstop = () => {
         const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
         onRecordingComplete(audioBlob);
-        
-        // Limpa as faixas de áudio para desligar o microfone (luz vermelha do navegador)
         stream.getTracks().forEach(track => track.stop());
       };
-
       mediaRecorder.current = recorder;
       recorder.start();
       setIsRecording(true);
-      console.log("[Audio] Recording started");
     } catch (err) {
       console.error("[Audio] Error accessing mic:", err);
-      alert("Microphone access denied or not available. Please allow permissions.");
+      alert("Microphone access denied or not available.");
     }
   }, [onRecordingComplete]);
 
@@ -441,16 +307,12 @@ function useAudioRecorder(onRecordingComplete: (audioBlob: Blob) => void) {
     if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
       mediaRecorder.current.stop();
       setIsRecording(false);
-      console.log("[Audio] Recording stopped");
     }
   }, []);
 
   return { isRecording, startRecording, stopRecording };
 }
 
-// ============================================
-// ONLINE STATUS HOOK
-// ============================================
 function useOnlineStatus() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   useEffect(() => {
@@ -467,16 +329,13 @@ function useOnlineStatus() {
 }
 
 // ============================================
-// MAIN APP COMPONENT
+// MAIN APP COMPONENT (NO AUTH)
 // ============================================
 export default function App() {
   const isOnline = useOnlineStatus();
   
-  // Auth state
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
-  const [hasVoiceAccess, setHasVoiceAccess] = useState(false);
+  // States
+  const [hasVoiceAccess] = useState(true); // Sempre true (Free)
   const [showVoicePopup, setShowVoicePopup] = useState(false);
   
   // Calculator state
@@ -486,97 +345,17 @@ export default function App() {
   const [lastResult, setLastResult] = useState<CalculationResult | null>(null);
   const [justCalculated, setJustCalculated] = useState(false);
   
-  // Check auth on mount
-  useEffect(() => {
-    async function checkAuth() {
-      if (!isSupabaseEnabled()) {
-        // Se Supabase não está configurado, permite uso sem login (dev mode)
-        setIsAuthenticated(true);
-        setIsCheckingAuth(false);
-        return;
-      }
-      
-      try {
-        const session = await getSession();
-        if (session?.user) {
-          setUser(session.user);
-          setIsAuthenticated(true);
-          
-          // Verifica se tem acesso ao Voice (trial ou assinatura ativa)
-          await checkVoiceAccess(session.user.id);
-        }
-      } catch (error) {
-        console.error('Auth check error:', error);
-      } finally {
-        setIsCheckingAuth(false);
-      }
-    }
-    
-    checkAuth();
-    
-    // Listen for auth changes
-    if (supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          if (session?.user) {
-            setUser(session.user);
-            setIsAuthenticated(true);
-            await checkVoiceAccess(session.user.id);
-          } else {
-            setUser(null);
-            setIsAuthenticated(false);
-            setHasVoiceAccess(false);
-          }
-        }
-      );
-      
-      return () => subscription.unsubscribe();
-    }
-  }, []);
-  
-  // Check if user has voice access (trial or subscription)
-  async function checkVoiceAccess(userId: string) {
-    if (!supabase) return;
-    
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('subscription_status, trial_ends_at')
-        .eq('id', userId)
-        .single();
-      
-      if (profile) {
-        const isTrialing = profile.subscription_status === 'trialing' && 
-          new Date(profile.trial_ends_at) > new Date();
-        const isActive = profile.subscription_status === 'active';
-        
-        setHasVoiceAccess(isTrialing || isActive);
-      }
-    } catch (error) {
-      console.error('Check voice access error:', error);
-    }
-  }
-  
-  // Handle auth success
-  const handleAuthSuccess = async () => {
-    const session = await getSession();
-    if (session?.user) {
-      setUser(session.user);
-      setIsAuthenticated(true);
-      await checkVoiceAccess(session.user.id);
-    }
-  };
-  
-  // Handle voice button click
+  // Handle voice button
   const handleVoiceButtonClick = () => {
-    if (!hasVoiceAccess) {
+    // Se quiser bloquear no futuro, mude hasVoiceAccess para false e descomente abaixo
+    /* if (!hasVoiceAccess) {
       setShowVoicePopup(true);
-      return false; // Não inicia gravação
-    }
-    return true; // Pode iniciar gravação
+      return false;
+    } */
+    return true;
   };
   
-  // Função para enviar o áudio gravado
+  // Audio Upload
   const handleAudioUpload = async (audioBlob: Blob) => {
     setVoiceState('processing');
     setDisplayValue('Thinking...');
@@ -591,27 +370,18 @@ export default function App() {
       });
 
       if (!response.ok) throw new Error('API Error');
-      
       const data = await response.json();
-      console.log("[App] AI Response:", data);
-
-      // A IA retorna a expressão interpretada, nós calculamos localmente
-      let exprToCalculate = '';
       
-      // CORRIGIDO: Aceita 'expression' para qualquer mode
+      let exprToCalculate = '';
       if (data.expression) {
-        // Novo formato: IA retorna expression diretamente
         exprToCalculate = data.expression;
       } else if (data.a) {
-        // Formato antigo: IA retorna a, op, b separados
         if (data.op && data.b) {
           exprToCalculate = `${data.a} ${data.op} ${data.b}`;
         } else {
           exprToCalculate = data.a;
         }
       }
-      
-      console.log("[App] Expression to calculate:", exprToCalculate);
       
       if (exprToCalculate) {
         setExpression(exprToCalculate);
@@ -636,20 +406,15 @@ export default function App() {
 
   const { isRecording, startRecording, stopRecording } = useAudioRecorder(handleAudioUpload);
 
-  // Voice handlers
   const handleVoiceStart = (e: any) => {
-    e.preventDefault(); // Previne seleção de texto no mobile
+    e.preventDefault();
     if (!isOnline) return;
-    
-    // Verifica se tem acesso ao Voice
-    if (!handleVoiceButtonClick()) {
-      return; // Mostra popup de upgrade
-    }
+    if (!handleVoiceButtonClick()) return;
     
     if (voiceState === 'idle') {
       setVoiceState('recording');
       setDisplayValue('🎙️');
-      setExpression(''); // Limpa input anterior ao gravar novo
+      setExpression('');
       startRecording();
     }
   };
@@ -658,32 +423,24 @@ export default function App() {
     e.preventDefault();
     if (voiceState === 'recording') {
       stopRecording();
-      // O estado muda para 'processing' dentro do callback handleAudioUpload
     }
   };
 
-  // Lógica de teclado numérico COM MEMÓRIA AUTOMÁTICA
   const handleKeypadInput = useCallback((value: string) => {
     const isOperator = [' + ', ' - ', ' * ', ' / ', ' % '].includes(value);
     
     if (justCalculated) {
       if (isOperator && lastResult) {
-        // MEMÓRIA: Usuário clicou operador após resultado
-        // Usa o resultado anterior como primeiro elemento da nova conta
-        // Mantém o formato original (polegadas ou número)
         const previousResult = lastResult.isInchMode 
-          ? lastResult.resultFeetInches.replace('"', '') // Remove " para continuar operação
+          ? lastResult.resultFeetInches.replace('"', '')
           : lastResult.resultFeetInches;
-        
         setExpression(previousResult + value);
         setJustCalculated(false);
       } else {
-        // Usuário clicou número/fração após resultado → começa nova conta
         setExpression(value);
         setJustCalculated(false);
       }
     } else {
-      // Operação normal: continua adicionando à expressão
       setExpression(prev => prev + value);
     }
   }, [justCalculated, lastResult]);
@@ -726,12 +483,10 @@ export default function App() {
     }
   };
 
-  // RESTAURADO: Lógica de clique nas frações
   const handleFractionClick = (frac: string) => {
     if (frac === "'ft") {
       handleKeypadInput("' ");
     } else {
-      // Adiciona fração com espaço se já houver número antes (ex: "5 1/2")
       const fracValue = frac.replace('"', '');
       if (expression && /\d$/.test(expression)) {
         handleKeypadInput(' ' + fracValue);
@@ -748,58 +503,13 @@ export default function App() {
     if (voiceState === 'processing') return 'Thinking...';
     return 'Hold to Speak';
   };
-  
-  // Logout function
-  const handleLogout = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
-    setUser(null);
-    setIsAuthenticated(false);
-    setHasVoiceAccess(false);
-  };
 
-  // Loading state with timeout
-  if (isCheckingAuth) {
-    return (
-      <div className="auth-screen">
-        <div className="auth-card" style={{ textAlign: 'center' }}>
-          <div className="auth-spinner" style={{ margin: '0 auto 16px', borderTopColor: '#f59e0b' }}></div>
-          <p style={{ color: '#6b7280' }}>Loading...</p>
-          <button 
-            onClick={() => {
-              setIsCheckingAuth(false);
-              setIsAuthenticated(false);
-            }}
-            style={{ 
-              marginTop: '16px', 
-              background: 'none', 
-              border: 'none', 
-              color: '#f59e0b', 
-              cursor: 'pointer',
-              fontSize: '0.875rem'
-            }}
-          >
-            Taking too long? Click here
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Auth screen (if not authenticated)
-  if (!isAuthenticated) {
-    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
-  }
-
-  // Main calculator
   return (
     <div className="app">
-      {/* Voice Upgrade Popup */}
+      {/* Voice Upgrade Popup (Opcional, se quiser manter a UI) */}
       {showVoicePopup && (
         <VoiceUpgradePopup 
           onClose={() => setShowVoicePopup(false)} 
-          userEmail={user?.email}
         />
       )}
       
@@ -814,16 +524,13 @@ export default function App() {
         </div>
         <div className="header-actions">
           {!isOnline && <div className="offline-badge">Offline</div>}
-          <button onClick={handleLogout} className="logout-btn" title="Logout">
-            ↪️
-          </button>
+          {/* Botão Logout removido */}
         </div>
       </header>
 
       <main className="main">
         {/* Left Card: Display & Voice */}
         <div className="card left-card">
-          {/* Display com dois resultados como na imagem */}
           <div className="display-section">
             <div className="display-row">
               <div className="display-box primary">
@@ -887,8 +594,6 @@ export default function App() {
         {/* Right Card: Keypad & Fractions */}
         <div className="card right-card">
           <div className="fraction-label">MEASURES</div>
-          
-          {/* Grid de Frações */}
           <div className="fraction-pad">
             {FRACTION_PAD.flat().map((frac, i) => (
               <button
@@ -901,7 +606,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* Grid Numérico */}
           <div className="keypad">
             {KEYPAD.map((row, rowIndex) => (
               <div key={rowIndex} className={`keypad-row ${rowIndex === KEYPAD.length - 1 ? 'last-row' : ''}`}>
