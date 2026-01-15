@@ -1,0 +1,531 @@
+# =============================================================================
+# DOCUMENTACAO DO CODEBASE - OnSite Calculator Apps
+# Gerado automaticamente
+# =============================================================================
+
+project:
+  name: OnSite Calculator Apps
+  description: Calculadora de construcao com suporte a voz e medicoes em polegadas/pes
+  stack:
+    frontend: React 18 + TypeScript + Vite
+    mobile: Capacitor (Android/iOS)
+    backend: Vercel Serverless Functions
+    ai: OpenAI (Whisper + GPT-4o)
+    database: Supabase
+
+# =============================================================================
+# ARQUIVOS DE CODIGO FONTE
+# =============================================================================
+
+files:
+
+  # ---------------------------------------------------------------------------
+  # src/App.tsx - Componente Principal da Calculadora
+  # ---------------------------------------------------------------------------
+  - path: src/App.tsx
+    lines: 628
+    description: Componente principal contendo toda a logica da calculadora
+
+    imports:
+      - module: react
+        items: [React, useState, useCallback, useRef, useEffect]
+        line: 1
+      - module: ./App.css
+        type: styles
+        line: 2
+      - module: ./components/VoiceUpgradePopup
+        items: [VoiceUpgradePopup]
+        type: default
+        line: 3
+
+    exports:
+      - name: App
+        type: function-component
+        export_type: default
+        line: 334
+
+    types:
+      - name: VoiceState
+        line: 8
+        kind: type-alias
+        description: Estado do botao de voz (idle, recording, processing)
+        definition: "'idle' | 'recording' | 'processing'"
+
+      - name: CalculationResult
+        line: 10
+        kind: interface
+        description: Resultado de um calculo com multiplos formatos
+        properties:
+          - resultFeetInches: string  # Resultado em pes e polegadas
+          - resultTotalInches: string # Total em polegadas
+          - resultDecimal: number     # Valor decimal
+          - expression: string        # Expressao original
+          - isInchMode: boolean       # Se e modo polegadas
+
+    constants:
+      - name: API_ENDPOINT
+        line: 21
+        value: "/api/interpret"
+        description: Endpoint da API de interpretacao de voz
+
+      - name: FRACTION_PAD
+        line: 23
+        description: Matriz de botoes de fracoes (1/8, 1/4, etc)
+
+      - name: KEYPAD
+        line: 28
+        description: Matriz de botoes do teclado numerico
+
+    functions:
+      # Engine de Calculo
+      - name: parseToInches
+        line: 40
+        params: "str: string"
+        returns: number
+        description: Converte string de medida (ex '5 1/2') para polegadas decimais
+        exported: false
+
+      - name: formatInches
+        line: 70
+        params: "inches: number"
+        returns: string
+        description: Formata numero decimal para string de pes e polegadas (ex "2' 6 1/2")
+        exported: false
+
+      - name: formatTotalInches
+        line: 102
+        params: "inches: number"
+        returns: string
+        description: Formata resultado apenas em polegadas totais (ex "30 1/2 In")
+        exported: false
+
+      - name: formatNumber
+        line: 118
+        params: "num: number"
+        returns: string
+        description: Formata numero com no maximo 2 casas decimais
+        exported: false
+
+      - name: tokenize
+        line: 124
+        params: "expression: string"
+        returns: "string[]"
+        description: Divide expressao matematica em tokens (numeros e operadores)
+        exported: false
+
+      - name: evaluateTokens
+        line: 157
+        params: "tokens: string[]"
+        returns: number
+        description: Avalia array de tokens e retorna resultado numerico
+        exported: false
+
+      - name: calculate
+        line: 194
+        params: "expression: string"
+        returns: "CalculationResult | null"
+        description: Funcao principal de calculo - suporta percentuais, fracoes e medicoes
+        exported: false
+
+      # Hooks Customizados
+      - name: useAudioRecorder
+        line: 279
+        params: "onRecordingComplete: (audioBlob: Blob) => void"
+        returns: "{ isRecording, startRecording, stopRecording }"
+        description: Hook para gravar audio do microfone usando MediaRecorder API
+        exported: false
+
+      - name: useOnlineStatus
+        line: 316
+        params: none
+        returns: boolean
+        description: Hook que monitora se o usuario esta online/offline
+        exported: false
+
+      # Componente Principal
+      - name: App
+        line: 334
+        params: none
+        returns: JSX.Element
+        description: Componente React principal da aplicacao
+        exported: true
+        export_type: default
+
+      # Funcoes internas do App
+      - name: handleVoiceButtonClick
+        line: 349
+        scope: App
+        description: Verifica se usuario pode usar voz (controle de acesso)
+        exported: false
+
+      - name: handleAudioUpload
+        line: 359
+        scope: App
+        params: "audioBlob: Blob"
+        description: Envia audio para API e processa resposta
+        exported: false
+
+      - name: handleVoiceStart
+        line: 409
+        scope: App
+        description: Inicia gravacao de audio ao pressionar botao
+        exported: false
+
+      - name: handleVoiceEnd
+        line: 422
+        scope: App
+        description: Para gravacao e envia audio
+        exported: false
+
+      - name: handleKeypadInput
+        line: 429
+        scope: App
+        params: "value: string"
+        description: Processa entrada do teclado numerico
+        exported: false
+
+      - name: handleKeyClick
+        line: 448
+        scope: App
+        params: "key: string"
+        description: Handler de clique nas teclas (=, C, operadores, etc)
+        exported: false
+
+      - name: handleFractionClick
+        line: 486
+        scope: App
+        params: "frac: string"
+        description: Handler de clique nos botoes de fracao
+        exported: false
+
+      - name: getVoiceButtonText
+        line: 499
+        scope: App
+        description: Retorna texto do botao de voz baseado no estado
+        exported: false
+
+  # ---------------------------------------------------------------------------
+  # src/main.tsx - Ponto de Entrada React
+  # ---------------------------------------------------------------------------
+  - path: src/main.tsx
+    lines: 11
+    description: Ponto de entrada da aplicacao React
+
+    imports:
+      - module: react
+        items: [React]
+        line: 1
+      - module: react-dom/client
+        items: [ReactDOM]
+        line: 2
+      - module: ./App
+        items: [App]
+        type: default
+        line: 3
+      - module: ./index.css
+        type: styles
+        line: 4
+
+    exports: []
+
+    functions:
+      - name: anonymous (IIFE)
+        line: 6
+        description: Renderiza App no elemento root com StrictMode
+        exported: false
+
+  # ---------------------------------------------------------------------------
+  # src/components/VoiceUpgradePopup.tsx - Popup de Upgrade de Voz
+  # ---------------------------------------------------------------------------
+  - path: src/components/VoiceUpgradePopup.tsx
+    lines: 62
+    description: Componente de popup para upgrade da funcionalidade de voz
+
+    imports:
+      - module: react
+        items: [React]
+        line: 1
+
+    exports:
+      - name: VoiceUpgradePopup
+        type: function-component
+        export_type: default
+        line: 8
+
+    types:
+      - name: VoiceUpgradePopupProps
+        line: 3
+        kind: interface
+        description: Props do componente VoiceUpgradePopup
+        properties:
+          - onClose: "() => void"  # Callback para fechar popup
+          - userEmail?: string      # Email opcional para pre-preencher checkout
+
+    functions:
+      - name: VoiceUpgradePopup
+        line: 8
+        params: "{ onClose, userEmail }: VoiceUpgradePopupProps"
+        returns: JSX.Element
+        description: Popup que mostra opcoes de upgrade para funcionalidade de voz
+        exported: true
+        export_type: default
+
+      - name: handleStartTrial
+        line: 12
+        scope: VoiceUpgradePopup
+        description: Abre pagina do Stripe checkout com email pre-preenchido
+        exported: false
+
+  # ---------------------------------------------------------------------------
+  # src/lib/supabase.ts - Cliente Supabase
+  # ---------------------------------------------------------------------------
+  - path: src/lib/supabase.ts
+    lines: 30
+    description: Configuracao e helpers do cliente Supabase
+
+    imports:
+      - module: "@supabase/supabase-js"
+        items: [createClient]
+        line: 1
+
+    exports:
+      - name: supabase
+        type: const
+        export_type: named
+        line: 10
+        description: Instancia do cliente Supabase (ou null se nao configurado)
+
+      - name: isSupabaseEnabled
+        type: function
+        export_type: named
+        line: 15
+        description: Verifica se Supabase esta configurado
+
+      - name: getCurrentUser
+        type: async-function
+        export_type: named
+        line: 18
+        description: Retorna usuario atual logado
+
+      - name: getSession
+        type: async-function
+        export_type: named
+        line: 25
+        description: Retorna sessao atual
+
+    constants:
+      - name: supabaseUrl
+        line: 3
+        description: URL do projeto Supabase (de env vars)
+
+      - name: supabaseAnonKey
+        line: 4
+        description: Chave anonima do Supabase (de env vars)
+
+    functions:
+      - name: isSupabaseEnabled
+        line: 15
+        params: none
+        returns: boolean
+        description: Verifica se cliente Supabase foi inicializado
+        exported: true
+
+      - name: getCurrentUser
+        line: 18
+        params: none
+        returns: "Promise<User | null>"
+        description: Busca usuario autenticado atual
+        exported: true
+
+      - name: getSession
+        line: 25
+        params: none
+        returns: "Promise<Session | null>"
+        description: Busca sessao de autenticacao atual
+        exported: true
+
+  # ---------------------------------------------------------------------------
+  # src/vite-env.d.ts - Definicoes de Tipos do Vite
+  # ---------------------------------------------------------------------------
+  - path: src/vite-env.d.ts
+    lines: 12
+    description: Definicoes TypeScript para variaveis de ambiente do Vite
+
+    imports:
+      - module: vite/client
+        type: reference
+        line: 1
+
+    exports: []
+
+    types:
+      - name: ImportMetaEnv
+        line: 3
+        kind: interface
+        description: Variaveis de ambiente disponiveis via import.meta.env
+        properties:
+          - VITE_SUPABASE_URL: string
+          - VITE_SUPABASE_ANON_KEY: string
+          - VITE_STRIPE_CHECKOUT_URL: string
+
+      - name: ImportMeta
+        line: 9
+        kind: interface
+        description: Extensao do ImportMeta com env tipado
+        properties:
+          - env: ImportMetaEnv
+
+  # ---------------------------------------------------------------------------
+  # api/interpret.js - API Serverless de Interpretacao de Voz
+  # ---------------------------------------------------------------------------
+  - path: api/interpret.js
+    lines: 139
+    description: Endpoint Vercel Serverless que processa audio e retorna expressao matematica
+
+    imports:
+      - module: formidable
+        items: [IncomingForm]
+        line: 1
+      - module: fs
+        items: [fs]
+        type: default
+        line: 2
+      - module: openai
+        items: [OpenAI]
+        type: default
+        line: 3
+
+    exports:
+      - name: config
+        type: object
+        export_type: named
+        line: 6
+        description: Configuracao do Vercel para desabilitar bodyParser
+
+      - name: handler
+        type: async-function
+        export_type: default
+        line: 12
+        description: Handler principal da API
+
+    constants:
+      - name: config
+        line: 6
+        description: Desabilita bodyParser do Vercel para aceitar uploads
+
+    functions:
+      - name: handler
+        line: 12
+        params: "(req, res)"
+        returns: "Promise<Response>"
+        description: |
+          Handler principal da API:
+          1. Recebe arquivo de audio via multipart/form-data
+          2. Transcreve com OpenAI Whisper
+          3. Interpreta com GPT-4o
+          4. Retorna JSON com expressao matematica
+        exported: true
+        export_type: default
+
+  # ---------------------------------------------------------------------------
+  # vite.config.ts - Configuracao do Vite
+  # ---------------------------------------------------------------------------
+  - path: vite.config.ts
+    lines: 12
+    description: Configuracao do build tool Vite
+
+    imports:
+      - module: vite
+        items: [defineConfig]
+        line: 1
+      - module: "@vitejs/plugin-react"
+        items: [react]
+        type: default
+        line: 2
+
+    exports:
+      - name: default
+        type: object
+        export_type: default
+        line: 4
+        description: Configuracao do Vite exportada
+
+    functions:
+      - name: defineConfig
+        line: 4
+        description: Funcao wrapper do Vite para configuracao tipada
+        note: Importada do Vite, nao definida aqui
+
+  # ---------------------------------------------------------------------------
+  # capacitor.config.ts - Configuracao do Capacitor
+  # ---------------------------------------------------------------------------
+  - path: capacitor.config.ts
+    lines: 20
+    description: Configuracao do Capacitor para builds nativos (Android/iOS)
+
+    imports:
+      - module: "@capacitor/cli"
+        items: [CapacitorConfig]
+        type: type-only
+        line: 1
+
+    exports:
+      - name: config
+        type: const
+        export_type: default
+        line: 19
+        description: Configuracao do Capacitor
+
+    constants:
+      - name: config
+        line: 3
+        type: CapacitorConfig
+        description: |
+          Configuracao do app nativo:
+          - appId: ca.onsiteclub.calculator
+          - appName: OnSite Calculator
+          - webDir: dist
+          - SplashScreen com fundo escuro
+
+# =============================================================================
+# RESUMO
+# =============================================================================
+
+summary:
+  total_files: 8
+  total_lines: ~900
+
+  types_count: 4
+  interfaces:
+    - VoiceState (App.tsx:8)
+    - CalculationResult (App.tsx:10)
+    - VoiceUpgradePopupProps (VoiceUpgradePopup.tsx:3)
+    - ImportMetaEnv (vite-env.d.ts:3)
+    - ImportMeta (vite-env.d.ts:9)
+
+  functions_count: 20
+  main_functions:
+    - parseToInches (App.tsx:40) - Converte medidas para polegadas
+    - formatInches (App.tsx:70) - Formata para pes/polegadas
+    - calculate (App.tsx:194) - Engine principal de calculo
+    - useAudioRecorder (App.tsx:279) - Hook de gravacao de audio
+    - useOnlineStatus (App.tsx:316) - Hook de status online
+    - handler (api/interpret.js:12) - API de processamento de voz
+
+  components:
+    - App (App.tsx:334) - Componente principal
+    - VoiceUpgradePopup (VoiceUpgradePopup.tsx:8) - Popup de upgrade
+
+  exports_summary:
+    default_exports:
+      - App (src/App.tsx)
+      - VoiceUpgradePopup (src/components/VoiceUpgradePopup.tsx)
+      - handler (api/interpret.js)
+      - config (vite.config.ts)
+      - config (capacitor.config.ts)
+    named_exports:
+      - supabase (src/lib/supabase.ts)
+      - isSupabaseEnabled (src/lib/supabase.ts)
+      - getCurrentUser (src/lib/supabase.ts)
+      - getSession (src/lib/supabase.ts)
+      - config (api/interpret.js)
